@@ -11,7 +11,7 @@ import risk.definitions
 Territory = namedtuple('Territory', ['territory_id', 'player_id', 'armies'])
 Move = namedtuple('Attack', ['from_territory_id', 'from_armies', 'to_territory_id', 'to_player_id', 'to_armies'])
 
-
+print("lol")
 class Board(object):
     """
     The Board object keeps track of all armies situated on the Risk
