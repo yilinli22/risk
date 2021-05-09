@@ -1,11 +1,12 @@
 import os
 import random
 from collections import namedtuple
-
+import heapdict
+from collections import deque
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from matplotlib.path import Path
-
+import copy
 import risk.definitions
 
 Territory = namedtuple('Territory', ['territory_id', 'player_id', 'armies'])
@@ -111,8 +112,12 @@ class Board(object):
         Returns:
             bool: True if the input path is valid
         '''
+        for p in range(len(path) - 1):
+            if path[p + 1] not in risk.definitions.territory_neighbors[path[p]]:
+                return False
+        return len(path) == len(set(path))
 
-    
+
     def is_valid_attack_path(self, path):
         '''
         The rules of Risk state that when attacking, 
@@ -130,6 +135,14 @@ class Board(object):
         Returns:
             bool: True if the path is an attack path
         '''
+        if not self.is_valid_path(path) or len(path) <= 1:
+            return False
+        else:
+            first_id = self.owner(path[0])
+            for attack_id in path[1:]:
+                if self.owner(attack_id) == first_id:
+                    return False
+        return True
 
 
     def cost_of_attack_path(self, path):
@@ -143,13 +156,22 @@ class Board(object):
         Returns:
             bool: the number of enemy armies in the path
         '''
+        cost = 0
+        if path is None:
+            return cost
+        for army in path[1:]:
+            cost += self.armies(army)
+        return cost
 
 
     def shortest_path(self, source, target):
         '''
-        This function uses BFS to find the shortest path between source and target.
-        This function does not take into account who owns the territories or how many armies are on the territories,
-        and so a shortest path is simply a valid path with the smallest number of territories visited.
+        This function uses BFS to find the shortest
+        path between source and target.
+        This function does not take into account who
+        owns the territories or how many armies are on the territories,
+        and so a shortest path is simply a valid path
+        with the smallest number of territories visited.
         This path is not necessarily unique,
         and when multiple shortest paths exist,
         then this function can return any of those paths.
@@ -159,8 +181,24 @@ class Board(object):
             target (int): a territory_id that is the target location
 
         Returns:
-            [int]: a valid path between source and target that has minimum length; this path is guaranteed to exist
+            [int]: a valid path between source and target that
+            has minimum length; this path is guaranteed to exist
         '''
+        dic = {}
+        dic[source] = [source]
+        q = deque([])
+        q.append(source)
+
+        while q:
+            current_id = q.popleft()
+            if current_id == target:
+                return dic[current_id]
+            for nb in risk.definitions.territory_neighbors[current_id]:
+                if nb not in q:
+                    dc = dic[current_id].copy()
+                    dc.append(nb)
+                    dic[nb] = dc
+                    q.append(nb)
 
 
     def can_fortify(self, source, target):
@@ -176,21 +214,73 @@ class Board(object):
         Returns:
             bool: True if reinforcing the target from the source territory is a valid move
         '''
+        dic = {}
+        dic[source] = [source]
+        q = deque([])
+        q.append(source)
+        went = set([source])
+
+        while q:
+            current_id = q.popleft()
+            if current_id == target:
+                return True
+            for fnb in self.friendly_neighbors(current_id):
+                fnb_id = fnb[0]
+                if fnb_id not in went:
+                    dc = dic[current_id].copy()
+                    dc.append(fnb_id)
+                    dic[fnb_id] = dc
+                    q.append(fnb_id)
+                    went.add(fnb_id)
+        return False
 
 
     def cheapest_attack_path(self, source, target):
         '''
-        This function uses Dijkstra's algorithm to calculate a cheapest valid attack path between two territories if such a path exists.
-        There may be multiple valid cheapest attack paths (in which case it doesn't matter which this function returns),
-        or there may be no valid attack paths (in which case the function returns None).
+        This function uses Dijkstra's algorithm to
+        calculate a cheapest valid attack path between
+        two territories if such a path exists.
+        There may be multiple valid cheapest
+        attack paths (in which case it doesn't matter
+        which this function returns),
+        or there may be no valid attack paths
+        (in which case the function returns None).
 
         Args:
             source (int): territory_id of source node
             target (int): territory_id of target node
 
         Returns:
-            [int]: a list of territory_ids representing the valid attack path; if no path exists, then it returns None instead
+            [int]: a list of territory_ids representing
+            the valid attack path; if no path exists,
+            then it returns None instead
         '''
+        if source != target:
+            dic = {}
+            dic[source] = [source]
+            q = heapdict.heapdict()
+            q[source] = 0
+            went = set([source])
+            neigh = self.owner(source)
+            while q:
+                current_territory, ctcp = q.peekitem()
+                q.pop(current_territory)
+                if current_territory == target:
+                    return dic[current_territory]
+                for nb in self.neighbors(current_territory):
+                    nb_id = nb[0]
+                    if nb_id not in went and self.owner(nb_id) != neigh:
+                        dc = dic[current_territory].copy()
+                        dc.append(nb_id)
+                        priority = ctcp + self.armies(nb_id) 
+                        if nb_id not in q:
+                            dic[nb_id] = dc
+                            q[nb_id] = priority
+                        else:
+                            if priority < q[nb_id]:
+                                dic[nb_id] = dc
+                                q[nb_id] = priority
+                went.add(current_territory)
 
 
     def can_attack(self, source, target):
@@ -202,6 +292,7 @@ class Board(object):
         Returns:
             bool: True if a valid attack path exists between source and target; else False
         '''
+        return self.cheapest_attack_path(source, target) is not None
 
 
     # ======================= #
